@@ -1,18 +1,46 @@
-module Test.Main where
+module Test.Main
+  ( Enumeration(..)
+  , Inner(..)
+  , InnerWithNoAllNullaryToStringTag(..)
+  , InnerWithTagSingleConstructors(..)
+  , InnerWithTagSingleConstructorsAndNoAllNullaryToStringTag(..)
+  , Nested(..)
+  , RecordBinary(..)
+  , RecordBinaryParam(..)
+  , RecordUnary(..)
+  , RecordUnaryParam(..)
+  , Siblings(..)
+  , SingleBinary(..)
+  , SingleNullary(..)
+  , SingleUnary(..)
+  , Trinity(..)
+  , Variety(..)
+  , checkAesonCompatibility
+  , checkInvertibility
+  , checkManyWithOptions
+  , defaultOptionsWithNoAllNullaryToStringTag
+  , defaultOptionsWithTagSingleConstructors
+  , defaultOptionsWithTagSingleConstructorsAndNoAllNullaryToStringTag
+  , handleJsonDecodeError
+  , main
+  , wrapError
+  )
+  where
 
-import Effect (Effect)
 import Data.Argonaut.Aeson.Decode.Generic (genericDecodeAeson, class DecodeAeson)
 import Data.Argonaut.Aeson.Encode.Generic (genericEncodeAeson, class EncodeAeson)
 import Data.Argonaut.Aeson.Options (Options(..), SumEncoding(..), defaultOptions)
-import Data.Argonaut.Decode.Class (class DecodeJson)
-import Data.Argonaut.Encode.Class (class EncodeJson)
-import Data.Argonaut.Decode.Error (JsonDecodeError(TypeMismatch), printJsonDecodeError)
 import Data.Argonaut.Core (stringify)
+import Data.Argonaut.Decode.Class (class DecodeJson)
+import Data.Argonaut.Decode.Error (JsonDecodeError(TypeMismatch), printJsonDecodeError)
+import Data.Argonaut.Encode.Class (class EncodeJson)
 import Data.Argonaut.Parser (jsonParser)
 import Data.Either (Either(..), either)
 import Data.Foldable (traverse_)
 import Data.Generic.Rep (class Generic)
+import Data.Maybe
 import Data.Show.Generic (genericShow)
+import Effect (Effect)
 import Prelude (class Eq, class Show, Unit, discard, show, map, ($), (<>), (<<<), (<=<))
 import Test.Unit (suite, test, TestSuite)
 import Test.Unit.Assert as Assert
@@ -50,8 +78,11 @@ wrapError :: forall r. Either String r -> Either JsonDecodeError r
 wrapError (Left e) = Left $ TypeMismatch e
 wrapError (Right r) = Right r
 
-checkAesonCompatibility :: forall a rep. Eq a => Show a => Generic a rep => DecodeAeson rep => a -> String -> Options -> TestSuite
-checkAesonCompatibility value canonicalEncoding options =
+checkAesonCompatibility :: forall a rep. Eq a => Show a => Generic a rep => EncodeAeson rep => DecodeAeson rep => a -> String -> Options -> TestSuite
+checkAesonCompatibility value canonicalEncoding options = do
+  test (show value <> " should encode as " <> canonicalEncoding) do
+    let encodedValue = (stringify <<< genericEncodeAeson options) value
+    Assert.equal canonicalEncoding encodedValue
   test (show value <> " as " <> canonicalEncoding) do
     let hopefullyDecodedValue = (genericDecodeAeson options <=< wrapError <<< jsonParser) canonicalEncoding
     Assert.equal (Right value) hopefullyDecodedValue
@@ -85,10 +116,25 @@ derive instance generic_RecordUnary :: Generic RecordUnary _
 instance show_RecordUnary :: Show RecordUnary where show = genericShow
 derive instance eq_RecordUnary :: Eq RecordUnary
 
+data RecordUnaryParam a = RecordUnaryParam {recUnaryParamField1 :: a} 
+derive instance genericRecUnaryParam :: Generic (RecordUnaryParam a) _
+instance showRecUnaryParam :: Show a => Show (RecordUnaryParam a) where
+  show = genericShow
+derive instance eqRecUnaryParam :: Eq a => Eq (RecordUnaryParam a)
+
 data RecordBinary = RecordBinary {recordBinaryField1 :: Int, recordBinaryField2 :: Int}
 derive instance generic_RecordBinary :: Generic RecordBinary _
 instance show_RecordBinary :: Show RecordBinary where show = genericShow
 derive instance eq_RecordBinary :: Eq RecordBinary
+
+data RecordBinaryParam a b = RecordBinaryParam {recBinaryParamField1 :: a, recBinaryParamField2 :: b}
+derive instance generic_RecordBinaryParam :: Generic (RecordBinaryParam a b) _
+instance show_RecordBinaryParam :: (Show a, Show b) => Show (RecordBinaryParam a b) where show = genericShow
+derive instance eq_RecordBinaryParam :: (Eq a, Eq b) => Eq (RecordBinaryParam a b)
+-- instance encodeJsonRecordBinaryParam :: (EncodeJson a, EncodeJson b) => EncodeJson (RecordBinaryParam a b) where
+--   encodeJson a = genericEncodeAeson defaultOptions a
+-- instance decodeJsonRecordBinaryParam :: (DecodeJson a, DecodeJson b) => DecodeJson (RecordBinaryParam a b) where
+--   decodeJson a = genericDecodeAeson defaultOptions a
 
 data Enumeration = Enumeration1 | Enumeration2 | Enumeration3
 derive instance generic_Enumeration :: Generic Enumeration _
@@ -171,7 +217,9 @@ main = runTest do
       , checkAesonCompatibility (SingleUnary 1) "1"
       , checkAesonCompatibility (SingleBinary 1 2) "[1,2]"
       , checkAesonCompatibility (RecordUnary {recordUnaryField1: 1}) "{\"recordUnaryField1\":1}"
+      , checkAesonCompatibility (RecordUnaryParam {recUnaryParamField1: 1}) "{\"recUnaryParamField1\":1}"
       , checkAesonCompatibility (RecordBinary {recordBinaryField1: 1, recordBinaryField2: 2}) "{\"recordBinaryField1\":1,\"recordBinaryField2\":2}"
+      , checkAesonCompatibility (RecordBinaryParam {recBinaryParamField1: 1, recBinaryParamField2: 2})  "{\"recBinaryParamField1\":1,\"recBinaryField2\":2}"
       , checkAesonCompatibility Enumeration1 "\"Enumeration1\""
       , checkAesonCompatibility Enumeration2 "\"Enumeration2\""
       , checkAesonCompatibility Enumeration3 "\"Enumeration3\""
@@ -203,7 +251,9 @@ main = runTest do
       , checkAesonCompatibility (SingleUnary 1) "1"
       , checkAesonCompatibility (SingleBinary 1 2) "[1,2]"
       , checkAesonCompatibility (RecordUnary {recordUnaryField1: 1}) "{\"recordUnaryField1\":1}"
+      , checkAesonCompatibility (RecordUnaryParam {recUnaryParamField1: 1}) "{\"recUnaryParamField1\":1}"
       , checkAesonCompatibility (RecordBinary {recordBinaryField1: 1, recordBinaryField2: 2}) "{\"recordBinaryField1\":1,\"recordBinaryField2\":2}"
+      , checkAesonCompatibility (RecordBinaryParam {recBinaryParamField1: 1, recBinaryParamField2: 2}) "{\"recBinaryParamField1\":1,\"recBinaryParamField2\":2}"
       , checkAesonCompatibility Enumeration1 "{\"tag\":\"Enumeration1\"}"
       , checkAesonCompatibility Enumeration2 "{\"tag\":\"Enumeration2\"}"
       , checkAesonCompatibility Enumeration3 "{\"tag\":\"Enumeration3\"}"
@@ -235,7 +285,9 @@ main = runTest do
       , checkAesonCompatibility (SingleUnary 1) "{\"tag\":\"SingleUnary\",\"contents\":1}"
       , checkAesonCompatibility (SingleBinary 1 2) "{\"tag\":\"SingleBinary\",\"contents\":[1,2]}"
       , checkAesonCompatibility (RecordUnary {recordUnaryField1: 1}) "{\"recordUnaryField1\":1,\"tag\":\"RecordUnary\"}"
+      , checkAesonCompatibility (RecordUnaryParam {recUnaryParamField1: 1}) "{\"recUnaryParamField1\":1,\"tag\":\"RecordUnaryParam\"}"
       , checkAesonCompatibility (RecordBinary {recordBinaryField1: 1, recordBinaryField2: 2}) "{\"tag\":\"RecordBinary\",\"recordBinaryField1\":1,\"recordBinaryField2\":2}"
+      , checkAesonCompatibility (RecordBinaryParam {recBinaryParamField1: 1, recBinaryParamField2: 2}) "{\"tag\":\"RecordBinaryParam\",\"recBinaryParamField1\":1,\"recBinaryParamField2\":2}"
       , checkAesonCompatibility Enumeration1 "\"Enumeration1\""
       , checkAesonCompatibility Enumeration2 "\"Enumeration2\""
       , checkAesonCompatibility Enumeration3 "\"Enumeration3\""
@@ -267,7 +319,9 @@ main = runTest do
       , checkAesonCompatibility (SingleUnary 1) "{\"tag\":\"SingleUnary\",\"contents\":1}"
       , checkAesonCompatibility (SingleBinary 1 2) "{\"tag\":\"SingleBinary\",\"contents\":[1,2]}"
       , checkAesonCompatibility (RecordUnary {recordUnaryField1: 1}) "{\"recordUnaryField1\":1,\"tag\":\"RecordUnary\"}"
+      , checkAesonCompatibility (RecordUnaryParam {recUnaryParamField1: 1}) "{\"recUnaryParamField1\":1,\"tag\":\"RecordUnaryParam\"}"
       , checkAesonCompatibility (RecordBinary {recordBinaryField1: 1, recordBinaryField2: 2}) "{\"tag\":\"RecordBinary\",\"recordBinaryField1\":1,\"recordBinaryField2\":2}"
+      , checkAesonCompatibility (RecordBinaryParam {recBinaryParamField1: 1, recBinaryParamField2: 2}) "{\"tag\":\"RecordBinaryParam\",\"recBinaryParamField1\":1,\"recBinaryParamField2\":2}"
       , checkAesonCompatibility Enumeration1 "{\"tag\":\"Enumeration1\"}"
       , checkAesonCompatibility Enumeration2 "{\"tag\":\"Enumeration2\"}"
       , checkAesonCompatibility Enumeration3 "{\"tag\":\"Enumeration3\"}"
@@ -300,7 +354,9 @@ main = runTest do
           , checkInvertibility (SingleUnary 1)
           , checkInvertibility (SingleBinary 1 2)
           , checkInvertibility (RecordUnary {recordUnaryField1: 1})
+          , checkInvertibility (RecordUnaryParam {recUnaryParamField1: 1})
           , checkInvertibility (RecordBinary {recordBinaryField1: 1, recordBinaryField2: 2})
+          , checkInvertibility (RecordBinaryParam {recBinaryParamField1: 1, recBinaryParamField2: 2})
           , checkInvertibility Enumeration1
           , checkInvertibility Enumeration2
           , checkInvertibility Enumeration3
